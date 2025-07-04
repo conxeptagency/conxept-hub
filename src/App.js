@@ -191,7 +191,7 @@ const KanbanView = ({ tasks, handleOpenTaskModal, setShowDeleteConfirm }) => {
                 <div key={status} className="bg-black/20 rounded-xl p-4 border border-gray-800">
                     <h2 className="font-bold text-xl mb-4 text-center text-gray-400">{status}</h2>
                     <div className="space-y-4 h-[60vh] overflow-y-auto p-1 pr-2">
-                        {tasks.filter(t => t.status === status).length > 0 ? ( tasks.filter(t => t.status === status).map(task => <TaskCard key={task.id} task={task} />) ) : ( <div className="text-center text-gray-600 pt-8 h-full flex items-center justify-center">No tasks here.</div> )}
+                        {tasks.filter(t => t.status === status).map(task => <TaskCard key={task.id} task={task} />) ) : ( <div className="text-center text-gray-600 pt-8 h-full flex items-center justify-center">No tasks here.</div> )}
                     </div>
                 </div>
             ))}
@@ -223,7 +223,7 @@ export default function App() {
             const firestore = getFirestore(app);
             const authInstance = getAuth(app);
             setDb(firestore);
-            setAuth(authInstance);
+            // setAuth(authInstance); // This was the error, it's not used in the main component
             const unsubscribe = onAuthStateChanged(authInstance, async (currentUser) => {
                 if (currentUser) { setUser(currentUser); } 
                 else { await signInAnonymously(authInstance); }
