@@ -204,7 +204,6 @@ export default function App() {
     // --- State Management ---
     const [db, setDb] = useState(null);
     const [user, setUser] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
     const [tasks, setTasks] = useState([]);
     const [clients, setClients] = useState([]);
     const [team, setTeam] = useState([]);
@@ -223,7 +222,6 @@ export default function App() {
             const firestore = getFirestore(app);
             const authInstance = getAuth(app);
             setDb(firestore);
-            // setAuth(authInstance); // This was the error, it's not used in the main component
             const unsubscribe = onAuthStateChanged(authInstance, async (currentUser) => {
                 if (currentUser) { setUser(currentUser); } 
                 else { await signInAnonymously(authInstance); }
