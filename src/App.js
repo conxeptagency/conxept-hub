@@ -15,7 +15,7 @@ const firebaseConfig = {
   measurementId: "G-ENMZ24KEFH"
 };
 
-// --- Child Components (Moved outside of App for Rules of Hooks) ---
+// --- Child Components ---
 
 const XLogo = ({ className }) => (
     <svg className={className} viewBox="0 0 1080 1080" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -29,19 +29,23 @@ const PriorityPill = ({ priority, className = '' }) => {
 };
 
 const TaskModal = ({ show, onClose, taskToEdit, handleSaveTask, clients, team }) => {
-    if (!show) return null;
-    
-    const [task, setTask] = useState(taskToEdit || { title: '', client: clients[0]?.name || '', assignee: team[0]?.name || '', priority: 'MED', status: 'To Do', description: '', taskType: 'Client' });
+    const [task, setTask] = useState(null);
     
     useEffect(() => {
-        if (task.taskType === 'CONXEPT') {
-            setTask(t => ({ ...t, client: 'CONXEPT' }));
-        } else {
-            if (task.client === 'CONXEPT') {
-                setTask(t => ({ ...t, client: clients[0]?.name || '' }));
-            }
+        if (show) {
+            setTask(taskToEdit || { title: '', client: clients[0]?.name || '', assignee: team[0]?.name || '', priority: 'MED', status: 'To Do', description: '', taskType: 'Client' });
         }
-    }, [task.taskType, clients]);
+    }, [show, taskToEdit, clients, team]);
+
+    useEffect(() => {
+        if (task?.taskType === 'CONXEPT') {
+            setTask(t => ({ ...t, client: 'CONXEPT' }));
+        } else if (task?.client === 'CONXEPT') {
+            setTask(t => ({ ...t, client: clients[0]?.name || '' }));
+        }
+    }, [task, clients]);
+    
+    if (!show || !task) return null;
 
     const handleInputChange = (e) => setTask(prev => ({ ...prev, [e.target.name]: e.target.value }));
     const handleSubmit = (e) => { e.preventDefault(); handleSaveTask(task, !!taskToEdit); };
@@ -66,10 +70,11 @@ const TaskModal = ({ show, onClose, taskToEdit, handleSaveTask, clients, team })
 };
 
 const SettingsModal = ({ show, onClose, db, team, clients }) => {
-    if (!show) return null;
     const [newItemName, setNewItemName] = useState(''); 
     const [newClientName, setNewClientName] = useState('');
     
+    if (!show) return null;
+
     const handleAddItem = async (type) => { 
         const name = type === 'team' ? newItemName : newClientName; 
         if (!name.trim() || !db) return; 
@@ -198,7 +203,6 @@ const KanbanView = ({ tasks, handleOpenTaskModal, setShowDeleteConfirm }) => {
 export default function App() {
     // --- State Management ---
     const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
     const [user, setUser] = useState(null);
     const [isAuthReady, setIsAuthReady] = useState(false);
     const [tasks, setTasks] = useState([]);
@@ -244,6 +248,50 @@ export default function App() {
         const unsubTeam = onSnapshot(query(collection(db, `artifacts/${appId}/public/data/team`)), (snapshot) => setTeam(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
         return () => { unsubTasks(); unsubClients(); unsubTeam(); };
     }, [isAuthReady, db]);
+
+    // --- Core Handlers (CRUD) ---
+    const handleOpenTaskModal = (task = null) => { setEditingTask(task); setShowTaskModal(true); };
+    const handleCloseTaskModal = () => { setEditingTask(null); setShowTaskModal(false); };
+    const handleSaveTask = async (taskData, isEditing) => {
+        if (!taskData.title || !db) return;
+        try {
+            const originalTask = isEditing ? tasks.find(t => t.id === editingTask.id) : null;
+            if (taskData.status === 'Completed' && originalTask?.status !== 'Completed') { taskData.completedAt = serverTimestamp(); } 
+            else if (taskData.status !== 'Completed') { taskData.completedAt = null; }
+            if (isEditing) { await updateDoc(doc(db, `artifacts/${appId}/public/data/tasks`, editingTask.id), taskData); } 
+            else { await addDoc(collection(db, `artifacts/${appId}/public/data/tasks`), { ...taskData, createdAt: serverTimestamp() }); }
+            handleCloseTaskModal();
+        } catch (err) { console.error("Error saving task:", err); setError("Failed to save task."); }
+    };
+    const handleDeleteTask = async (taskId) => {
+        if (!db || !taskId) return;
+        try { await deleteDoc(doc(db, `artifacts/${appId}/public/data/tasks`, taskId)); setShowDeleteConfirm(null); } 
+        catch (err) { console.error("Error deleting task:", err); setError("Failed to delete task."); }
+    };
+    const handleCompleteTask = async (taskId) => {
+        if (!db) return;
+        try { await updateDoc(doc(db, `artifacts/${appId}/public/data/tasks`, taskId), { status: 'Completed', completedAt: serverTimestamp() }); } 
+        catch (err) { console.error("Error completing task: ", err); setError("Could not complete the task."); }
+    };
+    const handleUndoCompleteTask = async (taskId) => {
+        if (!db) return;
+        try { await updateDoc(doc(db, `artifacts/${appId}/public/data/tasks`, taskId), { status: 'To Do', completedAt: null }); } 
+        catch (err) { console.error("Error undoing task: ", err); setError("Could not undo the task."); }
+    };
+    
+    // --- Export Handler ---
+    const exportToCSV = (dataToExport, filename) => {
+        if (dataToExport.length === 0) { alert("No data to export."); return; }
+        const headers = ['ID', 'Title', 'Description', 'Task Type', 'Client', 'Assignee', 'Priority', 'Status', 'Created At', 'Completed At'];
+        const rows = dataToExport.map(task => [ task.id, `"${task.title?.replace(/"/g, '""')}"`, `"${task.description?.replace(/"/g, '""')}"`, task.taskType, task.client, task.assignee, task.priority, task.status, task.createdAt?.toISOString() || '', task.completedAt?.toISOString() || '' ].join(','));
+        const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
+        const link = document.createElement("a");
+        link.setAttribute("href", encodeURI(csvContent));
+        link.setAttribute("download", `${filename}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     // --- Main Render ---
     return (
